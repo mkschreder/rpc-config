@@ -27,6 +27,7 @@
 #include <glob.h>
 #include <uci.h>
 #include <limits.h>
+#include <pwd.h>
 
 #ifdef HAVE_SHADOW
 #include <shadow.h>

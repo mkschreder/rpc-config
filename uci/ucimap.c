@@ -16,6 +16,8 @@
  * This file contains ucimap, an API for mapping UCI to C data structures
  */
 
+#define _GNU_SOURCE
+
 #include <strings.h>
 #include <stdbool.h>
 #include <string.h>

@@ -1,601 +1,733 @@
-#ifndef _LINUX_LIST_H
-#define _LINUX_LIST_H
-
-#include <stddef.h>
-/**
- * container_of - cast a member of a structure out to the containing structure
- * @ptr:	the pointer to the member.
- * @type:	the type of the container struct this is embedded in.
- * @member:	the name of the member within the struct.
- *
- */
-#ifndef container_of
-#define container_of(ptr, type, member) (			\
-	(type *)( (char *)ptr - offsetof(type,member) ))
-#endif
-
-
 /*
- * Simple doubly linked list implementation.
+ * libuci - Library for the Unified Configuration Interface
+ * Copyright (C) 2008 Felix Fietkau <nbd@openwrt.org>
  *
- * Some of the internal functions ("__xxx") are useful when
- * manipulating whole lists rather than single entries, as
- * sometimes we already know the next/prev entries and we can
- * generate better code by using them directly rather than
- * using the generic single-entry routines.
- */
-
-struct list_head {
-	struct list_head *next, *prev;
-};
-
-#define LIST_HEAD_INIT(name) { &(name), &(name) }
-
-#define LIST_HEAD(name) \
-	struct list_head name = LIST_HEAD_INIT(name)
-
-static inline void INIT_LIST_HEAD(struct list_head *list)
-{
-	list->next = list;
-	list->prev = list;
-}
-
-/*
- * Insert a new entry between two known consecutive entries.
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU Lesser General Public License version 2.1
+ * as published by the Free Software Foundation
  *
- * This is only for internal list manipulation where we know
- * the prev/next entries already!
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU Lesser General Public License for more details.
  */
-static inline void __list_add(struct list_head *new,
-			      struct list_head *prev,
-			      struct list_head *next)
+
+static void uci_list_set_pos(struct uci_list *head, struct uci_list *ptr, int pos)
 {
-	next->prev = new;
-	new->next = next;
-	new->prev = prev;
-	prev->next = new;
-}
+	struct uci_list *new_head = head;
+	struct uci_element *p = NULL;
 
-/**
- * list_add - add a new entry
- * @new: new entry to be added
- * @head: list head to add it after
- *
- * Insert a new entry after the specified head.
- * This is good for implementing stacks.
- */
-static inline void list_add(struct list_head *new, struct list_head *head)
-{
-	__list_add(new, head, head->next);
-}
-
-
-/**
- * list_add_tail - add a new entry
- * @new: new entry to be added
- * @head: list head to add it before
- *
- * Insert a new entry before the specified head.
- * This is useful for implementing queues.
- */
-static inline void list_add_tail(struct list_head *new, struct list_head *head)
-{
-	__list_add(new, head->prev, head);
-}
-
-
-/*
- * Delete a list entry by making the prev/next entries
- * point to each other.
- *
- * This is only for internal list manipulation where we know
- * the prev/next entries already!
- */
-static inline void __list_del(struct list_head * prev, struct list_head * next)
-{
-	next->prev = prev;
-	prev->next = next;
-}
-
-/**
- * list_del - deletes entry from list.
- * @entry: the element to delete from the list.
- * Note: list_empty() on entry does not return true after this, the entry is
- * in an undefined state.
- */
-static inline void list_del(struct list_head *entry)
-{
-	__list_del(entry->prev, entry->next);
-	entry->next = NULL;
-	entry->prev = NULL;
-}
-
-/**
- * list_replace - replace old entry by new one
- * @old : the element to be replaced
- * @new : the new element to insert
- *
- * If @old was empty, it will be overwritten.
- */
-static inline void list_replace(struct list_head *old,
-				struct list_head *new)
-{
-	new->next = old->next;
-	new->next->prev = new;
-	new->prev = old->prev;
-	new->prev->next = new;
-}
-
-static inline void list_replace_init(struct list_head *old,
-					struct list_head *new)
-{
-	list_replace(old, new);
-	INIT_LIST_HEAD(old);
-}
-
-/**
- * list_del_init - deletes entry from list and reinitialize it.
- * @entry: the element to delete from the list.
- */
-static inline void list_del_init(struct list_head *entry)
-{
-	__list_del(entry->prev, entry->next);
-	INIT_LIST_HEAD(entry);
-}
-
-/**
- * list_move - delete from one list and add as another's head
- * @list: the entry to move
- * @head: the head that will precede our entry
- */
-static inline void list_move(struct list_head *list, struct list_head *head)
-{
-	__list_del(list->prev, list->next);
-	list_add(list, head);
-}
-
-/**
- * list_move_tail - delete from one list and add as another's tail
- * @list: the entry to move
- * @head: the head that will follow our entry
- */
-static inline void list_move_tail(struct list_head *list,
-				  struct list_head *head)
-{
-	__list_del(list->prev, list->next);
-	list_add_tail(list, head);
-}
-
-/**
- * list_is_last - tests whether @list is the last entry in list @head
- * @list: the entry to test
- * @head: the head of the list
- */
-static inline int list_is_last(const struct list_head *list,
-				const struct list_head *head)
-{
-	return list->next == head;
-}
-
-/**
- * list_empty - tests whether a list is empty
- * @head: the list to test.
- */
-static inline int list_empty(const struct list_head *head)
-{
-	return head->next == head;
-}
-
-/**
- * list_empty_careful - tests whether a list is empty and not being modified
- * @head: the list to test
- *
- * Description:
- * tests whether a list is empty _and_ checks that no other CPU might be
- * in the process of modifying either member (next or prev)
- *
- * NOTE: using list_empty_careful() without synchronization
- * can only be safe if the only activity that can happen
- * to the list entry is list_del_init(). Eg. it cannot be used
- * if another CPU could re-list_add() it.
- */
-static inline int list_empty_careful(const struct list_head *head)
-{
-	struct list_head *next = head->next;
-	return (next == head) && (next == head->prev);
-}
-
-static inline void __list_splice(struct list_head *list,
-				 struct list_head *head)
-{
-	struct list_head *first = list->next;
-	struct list_head *last = list->prev;
-	struct list_head *at = head->next;
-
-	first->prev = head;
-	head->next = first;
-
-	last->next = at;
-	at->prev = last;
-}
-
-/**
- * list_splice - join two lists
- * @list: the new list to add.
- * @head: the place to add it in the first list.
- */
-static inline void list_splice(struct list_head *list, struct list_head *head)
-{
-	if (!list_empty(list))
-		__list_splice(list, head);
-}
-
-/**
- * list_splice_init - join two lists and reinitialise the emptied list.
- * @list: the new list to add.
- * @head: the place to add it in the first list.
- *
- * The list at @list is reinitialised
- */
-static inline void list_splice_init(struct list_head *list,
-				    struct list_head *head)
-{
-	if (!list_empty(list)) {
-		__list_splice(list, head);
-		INIT_LIST_HEAD(list);
+	uci_list_del(ptr);
+	uci_foreach_element(head, p) {
+		if (pos-- <= 0)
+			break;
+		new_head = &p->list;
 	}
+
+	uci_list_add(new_head->next, ptr);
 }
 
-/**
- * list_entry - get the struct for this entry
- * @ptr:	the &struct list_head pointer.
- * @type:	the type of the struct this is embedded in.
- * @member:	the name of the list_struct within the struct.
- */
-#define list_entry(ptr, type, member) \
-	container_of(ptr, type, member)
-
-/**
- * list_first_entry - get the first element from a list
- * @ptr:	the list head to take the element from.
- * @type:	the type of the struct this is embedded in.
- * @member:	the name of the list_struct within the struct.
- *
- * Note, that list is expected to be not empty.
- */
-#define list_first_entry(ptr, type, member) \
-	list_entry((ptr)->next, type, member)
-
-/**
- * list_for_each	-	iterate over a list
- * @pos:	the &struct list_head to use as a loop cursor.
- * @head:	the head for your list.
- */
-#define list_for_each(pos, head) \
-	for (pos = (head)->next; pos != (head); \
-        	pos = pos->next)
-
-/**
- * __list_for_each	-	iterate over a list
- * @pos:	the &struct list_head to use as a loop cursor.
- * @head:	the head for your list.
- *
- * This variant differs from list_for_each() in that it's the
- * simplest possible list iteration code, no prefetching is done.
- * Use this for code that knows the list to be very short (empty
- * or 1 entry) most of the time.
- */
-#define __list_for_each(pos, head) \
-	for (pos = (head)->next; pos != (head); pos = pos->next)
-
-/**
- * list_for_each_prev	-	iterate over a list backwards
- * @pos:	the &struct list_head to use as a loop cursor.
- * @head:	the head for your list.
- */
-#define list_for_each_prev(pos, head) \
-	for (pos = (head)->prev; pos != (head); \
-        	pos = pos->prev)
-
-/**
- * list_for_each_safe - iterate over a list safe against removal of list entry
- * @pos:	the &struct list_head to use as a loop cursor.
- * @n:		another &struct list_head to use as temporary storage
- * @head:	the head for your list.
- */
-#define list_for_each_safe(pos, n, head) \
-	for (pos = (head)->next, n = pos->next; pos != (head); \
-		pos = n, n = pos->next)
-
-/**
- * list_for_each_prev_safe - iterate over a list backwards safe against removal of list entry
- * @pos:	the &struct list_head to use as a loop cursor.
- * @n:		another &struct list_head to use as temporary storage
- * @head:	the head for your list.
- */
-#define list_for_each_prev_safe(pos, n, head) \
-	for (pos = (head)->prev, n = pos->prev; \
-	     pos != (head); \
-	     pos = n, n = pos->prev)
-
-/**
- * list_for_each_entry	-	iterate over list of given type
- * @pos:	the type * to use as a loop cursor.
- * @head:	the head for your list.
- * @member:	the name of the list_struct within the struct.
- */
-#define list_for_each_entry(pos, head, member)				\
-	for (pos = list_entry((head)->next, typeof(*pos), member);	\
-	     &pos->member != (head); 	\
-	     pos = list_entry(pos->member.next, typeof(*pos), member))
-
-/**
- * list_for_each_entry_reverse - iterate backwards over list of given type.
- * @pos:	the type * to use as a loop cursor.
- * @head:	the head for your list.
- * @member:	the name of the list_struct within the struct.
- */
-#define list_for_each_entry_reverse(pos, head, member)			\
-	for (pos = list_entry((head)->prev, typeof(*pos), member);	\
-	     &pos->member != (head); 	\
-	     pos = list_entry(pos->member.prev, typeof(*pos), member))
-
-/**
- * list_prepare_entry - prepare a pos entry for use in list_for_each_entry_continue()
- * @pos:	the type * to use as a start point
- * @head:	the head of the list
- * @member:	the name of the list_struct within the struct.
- *
- * Prepares a pos entry for use as a start point in list_for_each_entry_continue().
- */
-#define list_prepare_entry(pos, head, member) \
-	((pos) ? : list_entry(head, typeof(*pos), member))
-
-/**
- * list_for_each_entry_continue - continue iteration over list of given type
- * @pos:	the type * to use as a loop cursor.
- * @head:	the head for your list.
- * @member:	the name of the list_struct within the struct.
- *
- * Continue to iterate over list of given type, continuing after
- * the current position.
- */
-#define list_for_each_entry_continue(pos, head, member) 		\
-	for (pos = list_entry(pos->member.next, typeof(*pos), member);	\
-	     &pos->member != (head);	\
-	     pos = list_entry(pos->member.next, typeof(*pos), member))
-
-/**
- * list_for_each_entry_continue_reverse - iterate backwards from the given point
- * @pos:	the type * to use as a loop cursor.
- * @head:	the head for your list.
- * @member:	the name of the list_struct within the struct.
- *
- * Start to iterate over list of given type backwards, continuing after
- * the current position.
- */
-#define list_for_each_entry_continue_reverse(pos, head, member)		\
-	for (pos = list_entry(pos->member.prev, typeof(*pos), member);	\
-	     &pos->member != (head);	\
-	     pos = list_entry(pos->member.prev, typeof(*pos), member))
-
-/**
- * list_for_each_entry_from - iterate over list of given type from the current point
- * @pos:	the type * to use as a loop cursor.
- * @head:	the head for your list.
- * @member:	the name of the list_struct within the struct.
- *
- * Iterate over list of given type, continuing from current position.
- */
-#define list_for_each_entry_from(pos, head, member) 			\
-	for (; &pos->member != (head);	\
-	     pos = list_entry(pos->member.next, typeof(*pos), member))
-
-/**
- * list_for_each_entry_safe - iterate over list of given type safe against removal of list entry
- * @pos:	the type * to use as a loop cursor.
- * @n:		another type * to use as temporary storage
- * @head:	the head for your list.
- * @member:	the name of the list_struct within the struct.
- */
-#define list_for_each_entry_safe(pos, n, head, member)			\
-	for (pos = list_entry((head)->next, typeof(*pos), member),	\
-		n = list_entry(pos->member.next, typeof(*pos), member);	\
-	     &pos->member != (head); 					\
-	     pos = n, n = list_entry(n->member.next, typeof(*n), member))
-
-/**
- * list_for_each_entry_safe_continue
- * @pos:	the type * to use as a loop cursor.
- * @n:		another type * to use as temporary storage
- * @head:	the head for your list.
- * @member:	the name of the list_struct within the struct.
- *
- * Iterate over list of given type, continuing after current point,
- * safe against removal of list entry.
- */
-#define list_for_each_entry_safe_continue(pos, n, head, member) 		\
-	for (pos = list_entry(pos->member.next, typeof(*pos), member), 		\
-		n = list_entry(pos->member.next, typeof(*pos), member);		\
-	     &pos->member != (head);						\
-	     pos = n, n = list_entry(n->member.next, typeof(*n), member))
-
-/**
- * list_for_each_entry_safe_from
- * @pos:	the type * to use as a loop cursor.
- * @n:		another type * to use as temporary storage
- * @head:	the head for your list.
- * @member:	the name of the list_struct within the struct.
- *
- * Iterate over list of given type from current point, safe against
- * removal of list entry.
- */
-#define list_for_each_entry_safe_from(pos, n, head, member) 			\
-	for (n = list_entry(pos->member.next, typeof(*pos), member);		\
-	     &pos->member != (head);						\
-	     pos = n, n = list_entry(n->member.next, typeof(*n), member))
-
-/**
- * list_for_each_entry_safe_reverse
- * @pos:	the type * to use as a loop cursor.
- * @n:		another type * to use as temporary storage
- * @head:	the head for your list.
- * @member:	the name of the list_struct within the struct.
- *
- * Iterate backwards over list of given type, safe against removal
- * of list entry.
- */
-#define list_for_each_entry_safe_reverse(pos, n, head, member)		\
-	for (pos = list_entry((head)->prev, typeof(*pos), member),	\
-		n = list_entry(pos->member.prev, typeof(*pos), member);	\
-	     &pos->member != (head); 					\
-	     pos = n, n = list_entry(n->member.prev, typeof(*n), member))
+static inline void uci_list_fixup(struct uci_list *ptr)
+{
+	ptr->prev->next = ptr;
+	ptr->next->prev = ptr;
+}
 
 /*
- * Double linked lists with a single pointer list head.
- * Mostly useful for hash tables where the two pointer list head is
- * too wasteful.
- * You lose the ability to access the tail in O(1).
+ * uci_alloc_generic allocates a new uci_element with payload
+ * payload is appended to the struct to save memory and reduce fragmentation
  */
-
-struct hlist_head {
-	struct hlist_node *first;
-};
-
-struct hlist_node {
-	struct hlist_node *next, **pprev;
-};
-
-#define HLIST_HEAD_INIT { .first = NULL }
-#define HLIST_HEAD(name) struct hlist_head name = {  .first = NULL }
-#define INIT_HLIST_HEAD(ptr) ((ptr)->first = NULL)
-static inline void INIT_HLIST_NODE(struct hlist_node *h)
+__private struct uci_element *
+uci_alloc_generic(struct uci_context *ctx, int type, const char *name, int size)
 {
-	h->next = NULL;
-	h->pprev = NULL;
-}
+	struct uci_element *e;
+	int datalen = size;
+	void *ptr;
 
-static inline int hlist_unhashed(const struct hlist_node *h)
-{
-	return !h->pprev;
-}
-
-static inline int hlist_empty(const struct hlist_head *h)
-{
-	return !h->first;
-}
-
-static inline void __hlist_del(struct hlist_node *n)
-{
-	struct hlist_node *next = n->next;
-	struct hlist_node **pprev = n->pprev;
-	*pprev = next;
-	if (next)
-		next->pprev = pprev;
-}
-
-static inline void hlist_del(struct hlist_node *n)
-{
-	__hlist_del(n);
-	n->next = NULL;
-	n->pprev = NULL;
-}
-
-static inline void hlist_del_init(struct hlist_node *n)
-{
-	if (!hlist_unhashed(n)) {
-		__hlist_del(n);
-		INIT_HLIST_NODE(n);
+	ptr = uci_malloc(ctx, datalen);
+	e = (struct uci_element *) ptr;
+	e->type = type;
+	if (name) {
+		UCI_TRAP_SAVE(ctx, error);
+		e->name = uci_strdup(ctx, name);
+		UCI_TRAP_RESTORE(ctx);
 	}
+	uci_list_init(&e->list);
+	goto done;
+
+error:
+	free(ptr);
+	UCI_THROW(ctx, ctx->err);
+
+done:
+	return e;
 }
 
-
-static inline void hlist_add_head(struct hlist_node *n, struct hlist_head *h)
+__private void
+uci_free_element(struct uci_element *e)
 {
-	struct hlist_node *first = h->first;
-	n->next = first;
-	if (first)
-		first->pprev = &n->next;
-	h->first = n;
-	n->pprev = &h->first;
+	free(e->name);
+	if (!uci_list_empty(&e->list))
+		uci_list_del(&e->list);
+	free(e);
 }
 
-
-/* next must be != NULL */
-static inline void hlist_add_before(struct hlist_node *n,
-					struct hlist_node *next)
+static struct uci_option *
+uci_alloc_option(struct uci_section *s, const char *name, const char *value)
 {
-	n->pprev = next->pprev;
-	n->next = next;
-	next->pprev = &n->next;
-	*(n->pprev) = n;
+	struct uci_package *p = s->package;
+	struct uci_context *ctx = p->ctx;
+	struct uci_option *o;
+
+	o = uci_alloc_element(ctx, option, name, strlen(value) + 1);
+	o->type = UCI_TYPE_STRING;
+	o->v.string = uci_dataptr(o);
+	o->section = s;
+	strcpy(o->v.string, value);
+	uci_list_add(&s->options, &o->e.list);
+
+	return o;
 }
 
-static inline void hlist_add_after(struct hlist_node *n,
-					struct hlist_node *next)
+static inline void
+uci_free_option(struct uci_option *o)
 {
-	next->next = n->next;
-	n->next = next;
-	next->pprev = &n->next;
+	struct uci_element *e, *tmp;
 
-	if(next->next)
-		next->next->pprev  = &next->next;
+	switch(o->type) {
+	case UCI_TYPE_STRING:
+		if ((o->v.string != uci_dataptr(o)) &&
+			(o->v.string != NULL))
+			free(o->v.string);
+		break;
+	case UCI_TYPE_LIST:
+		uci_foreach_element_safe(&o->v.list, tmp, e) {
+			uci_free_element(e);
+		}
+		break;
+	default:
+		break;
+	}
+	uci_free_element(&o->e);
 }
 
-#define hlist_entry(ptr, type, member) container_of(ptr,type,member)
+static struct uci_option *
+uci_alloc_list(struct uci_section *s, const char *name)
+{
+	struct uci_package *p = s->package;
+	struct uci_context *ctx = p->ctx;
+	struct uci_option *o;
 
-#define hlist_for_each(pos, head) \
-	for (pos = (head)->first; pos; pos = pos->next)
+	o = uci_alloc_element(ctx, option, name, 0);
+	o->type = UCI_TYPE_LIST;
+	o->section = s;
+	uci_list_init(&o->v.list);
+	uci_list_add(&s->options, &o->e.list);
 
-#define hlist_for_each_safe(pos, n, head) \
-	for (pos = (head)->first; pos; pos = n)
+	return o;
+}
 
-/**
- * hlist_for_each_entry	- iterate over list of given type
- * @tpos:	the type * to use as a loop cursor.
- * @pos:	the &struct hlist_node to use as a loop cursor.
- * @head:	the head for your list.
- * @member:	the name of the hlist_node within the struct.
- */
-#define hlist_for_each_entry(tpos, pos, head, member)			 \
-	for (pos = (head)->first; pos &&				 \
-		({ tpos = hlist_entry(pos, typeof(*tpos), member); 1;}); \
-	     pos = pos->next)
+/* Based on an efficient hash function published by D. J. Bernstein */
+static unsigned int djbhash(unsigned int hash, char *str)
+{
+	int len = strlen(str);
+	int i;
 
-/**
- * hlist_for_each_entry_continue - iterate over a hlist continuing after current point
- * @tpos:	the type * to use as a loop cursor.
- * @pos:	the &struct hlist_node to use as a loop cursor.
- * @member:	the name of the hlist_node within the struct.
- */
-#define hlist_for_each_entry_continue(tpos, pos, member)		\
-	for (pos = (pos)->next; pos &&					\
-	     ({ tpos = hlist_entry(pos, typeof(*tpos), member); 1;});   \
-	     pos = pos->next)
+	/* initial value */
+	if (hash == ~0)
+		hash = 5381;
 
-/**
- * hlist_for_each_entry_from - iterate over a hlist continuing from current point
- * @tpos:	the type * to use as a loop cursor.
- * @pos:	the &struct hlist_node to use as a loop cursor.
- * @member:	the name of the hlist_node within the struct.
- */
-#define hlist_for_each_entry_from(tpos, pos, member)			 \
-	for (; pos &&			 \
-		({ tpos = hlist_entry(pos, typeof(*tpos), member); 1;}); \
-	     pos = pos->next)
+	for(i = 0; i < len; i++) {
+		hash = ((hash << 5) + hash) + str[i];
+	}
+	return (hash & 0x7FFFFFFF);
+}
 
-/**
- * hlist_for_each_entry_safe - iterate over list of given type safe against removal of list entry
- * @tpos:	the type * to use as a loop cursor.
- * @pos:	the &struct hlist_node to use as a loop cursor.
- * @n:		another &struct hlist_node to use as temporary storage
- * @head:	the head for your list.
- * @member:	the name of the hlist_node within the struct.
- */
-#define hlist_for_each_entry_safe(tpos, pos, n, head, member) 		 \
-	for (pos = (head)->first;					 \
-	     pos && ({ n = pos->next; 1; }) && 				 \
-		({ tpos = hlist_entry(pos, typeof(*tpos), member); 1;}); \
-	     pos = n)
+/* fix up an unnamed section, e.g. after adding options to it */
+__private void uci_fixup_section(struct uci_context *ctx, struct uci_section *s)
+{
+	unsigned int hash = ~0;
+	struct uci_element *e;
+	char buf[16];
 
-#endif
+	if (!s || s->e.name)
+		return;
+
+	/*
+	 * Generate a name for unnamed sections. This is used as reference
+	 * when locating or updating the section from apps/scripts.
+	 * To make multiple concurrent versions somewhat safe for updating,
+	 * the name is generated from a hash of its type and name/value
+	 * pairs of its option, and it is prefixed by a counter value.
+	 * If the order of the unnamed sections changes for some reason,
+	 * updates to them will be rejected.
+	 */
+	hash = djbhash(hash, s->type);
+	uci_foreach_element(&s->options, e) {
+		struct uci_option *o;
+		hash = djbhash(hash, e->name);
+		o = uci_to_option(e);
+		switch(o->type) {
+		case UCI_TYPE_STRING:
+			hash = djbhash(hash, o->v.string);
+			break;
+		default:
+			break;
+		}
+	}
+	sprintf(buf, "cfg%02x%04x", ++s->package->n_section, hash % (1 << 16));
+	s->e.name = uci_strdup(ctx, buf);
+}
+
+static struct uci_section *
+uci_alloc_section(struct uci_package *p, const char *type, const char *name)
+{
+	struct uci_context *ctx = p->ctx;
+	struct uci_section *s;
+
+	if (name && !name[0])
+		name = NULL;
+
+	s = uci_alloc_element(ctx, section, name, strlen(type) + 1);
+	uci_list_init(&s->options);
+	s->type = uci_dataptr(s);
+	s->package = p;
+	strcpy(s->type, type);
+	if (name == NULL)
+		s->anonymous = true;
+	p->n_section++;
+
+	uci_list_add(&p->sections, &s->e.list);
+
+	return s;
+}
+
+static void
+uci_free_section(struct uci_section *s)
+{
+	struct uci_element *o, *tmp;
+
+	uci_foreach_element_safe(&s->options, tmp, o) {
+		uci_free_option(uci_to_option(o));
+	}
+	if ((s->type != uci_dataptr(s)) &&
+		(s->type != NULL))
+		free(s->type);
+	uci_free_element(&s->e);
+}
+
+__private struct uci_package *
+uci_alloc_package(struct uci_context *ctx, const char *name)
+{
+	struct uci_package *p;
+
+	p = uci_alloc_element(ctx, package, name, 0);
+	p->ctx = ctx;
+	uci_list_init(&p->sections);
+	uci_list_init(&p->delta);
+	uci_list_init(&p->saved_delta);
+	return p;
+}
+
+__private void
+uci_free_package(struct uci_package **package)
+{
+	struct uci_element *e, *tmp;
+	struct uci_package *p = *package;
+
+	if(!p)
+		return;
+
+	free(p->path);
+	uci_foreach_element_safe(&p->sections, tmp, e) {
+		uci_free_section(uci_to_section(e));
+	}
+	uci_foreach_element_safe(&p->delta, tmp, e) {
+		uci_free_delta(uci_to_delta(e));
+	}
+	uci_foreach_element_safe(&p->saved_delta, tmp, e) {
+		uci_free_delta(uci_to_delta(e));
+	}
+	uci_free_element(&p->e);
+	*package = NULL;
+}
+
+static void
+uci_free_any(struct uci_element **e)
+{
+	switch((*e)->type) {
+	case UCI_TYPE_SECTION:
+		uci_free_section(uci_to_section(*e));
+		break;
+	case UCI_TYPE_OPTION:
+		uci_free_option(uci_to_option(*e));
+		break;
+	default:
+		break;
+	}
+	*e = NULL;
+}
+
+__private struct uci_element *
+uci_lookup_list(struct uci_list *list, const char *name)
+{
+	struct uci_element *e;
+
+	uci_foreach_element(list, e) {
+		if (!strcmp(e->name, name))
+			return e;
+	}
+	return NULL;
+}
+
+static struct uci_element *
+uci_lookup_ext_section(struct uci_context *ctx, struct uci_ptr *ptr)
+{
+	char *idxstr, *t, *section, *name;
+	struct uci_element *e = NULL;
+	struct uci_section *s;
+	int idx, c;
+
+	section = uci_strdup(ctx, ptr->section);
+	name = idxstr = section + 1;
+
+	if (section[0] != '@')
+		goto error;
+
+	/* parse the section index part */
+	idxstr = strchr(idxstr, '[');
+	if (!idxstr)
+		goto error;
+	*idxstr = 0;
+	idxstr++;
+
+	t = strchr(idxstr, ']');
+	if (!t)
+		goto error;
+	if (t[1] != 0)
+		goto error;
+	*t = 0;
+
+	t = NULL;
+	idx = strtol(idxstr, &t, 10);
+	if (t && *t)
+		goto error;
+
+	if (!*name)
+		name = NULL;
+	else if (!uci_validate_type(name))
+		goto error;
+
+	/* if the given index is negative, it specifies the section number from
+	 * the end of the list */
+	if (idx < 0) {
+		c = 0;
+		uci_foreach_element(&ptr->p->sections, e) {
+			s = uci_to_section(e);
+			if (name && (strcmp(s->type, name) != 0))
+				continue;
+
+			c++;
+		}
+		idx += c;
+	}
+
+	c = 0;
+	uci_foreach_element(&ptr->p->sections, e) {
+		s = uci_to_section(e);
+		if (name && (strcmp(s->type, name) != 0))
+			continue;
+
+		if (idx == c)
+			goto done;
+		c++;
+	}
+	e = NULL;
+	goto done;
+
+error:
+	free(section);
+	memset(ptr, 0, sizeof(struct uci_ptr));
+	UCI_THROW(ctx, UCI_ERR_INVAL);
+done:
+	free(section);
+	if (e)
+		ptr->section = e->name;
+	return e;
+}
+
+int
+uci_lookup_next(struct uci_context *ctx, struct uci_element **e, struct uci_list *list, const char *name)
+{
+	UCI_HANDLE_ERR(ctx);
+
+	*e = uci_lookup_list(list, name);
+	if (!*e)
+		UCI_THROW(ctx, UCI_ERR_NOTFOUND);
+
+	return 0;
+}
+
+int
+uci_lookup_ptr(struct uci_context *ctx, struct uci_ptr *ptr, char *str, bool extended)
+{
+	struct uci_element *e;
+
+	UCI_HANDLE_ERR(ctx);
+	UCI_ASSERT(ctx, ptr != NULL);
+
+	if (str)
+		UCI_INTERNAL(uci_parse_ptr, ctx, ptr, str);
+
+	ptr->flags |= UCI_LOOKUP_DONE;
+
+	/* look up the package first */
+	if (ptr->p)
+		e = &ptr->p->e;
+	else
+		e = uci_lookup_list(&ctx->root, ptr->package);
+
+	if (!e) {
+		UCI_INTERNAL(uci_load, ctx, ptr->package, &ptr->p);
+		if (!ptr->p)
+			goto notfound;
+		ptr->last = &ptr->p->e;
+	} else {
+		ptr->p = uci_to_package(e);
+		ptr->last = e;
+	}
+
+	if (!ptr->section && !ptr->s)
+		goto complete;
+
+	/* if the section name validates as a regular name, pass through
+	 * to the regular uci_lookup function call */
+	if (ptr->s) {
+		e = &ptr->s->e;
+	} else if (ptr->flags & UCI_LOOKUP_EXTENDED) {
+		if (extended)
+			e = uci_lookup_ext_section(ctx, ptr);
+		else
+			UCI_THROW(ctx, UCI_ERR_INVAL);
+	} else {
+		e = uci_lookup_list(&ptr->p->sections, ptr->section);
+	}
+
+	if (!e)
+		goto abort;
+
+	ptr->last = e;
+	ptr->s = uci_to_section(e);
+
+	if (ptr->option) {
+		e = uci_lookup_list(&ptr->s->options, ptr->option);
+		if (!e)
+			goto abort;
+
+		ptr->o = uci_to_option(e);
+		ptr->last = e;
+	}
+
+complete:
+	ptr->flags |= UCI_LOOKUP_COMPLETE;
+abort:
+	return UCI_OK;
+
+notfound:
+	UCI_THROW(ctx, UCI_ERR_NOTFOUND);
+	/* not a chance here */
+	return UCI_ERR_NOTFOUND;
+}
+
+__private struct uci_element *
+uci_expand_ptr(struct uci_context *ctx, struct uci_ptr *ptr, bool complete)
+{
+	UCI_ASSERT(ctx, ptr != NULL);
+
+	if (!(ptr->flags & UCI_LOOKUP_DONE))
+		UCI_INTERNAL(uci_lookup_ptr, ctx, ptr, NULL, 1);
+	if (complete && !(ptr->flags & UCI_LOOKUP_COMPLETE))
+		UCI_THROW(ctx, UCI_ERR_NOTFOUND);
+	UCI_ASSERT(ctx, ptr->p != NULL);
+
+	/* fill in missing string info */
+	if (ptr->p && !ptr->package)
+		ptr->package = ptr->p->e.name;
+	if (ptr->s && !ptr->section)
+		ptr->section = ptr->s->e.name;
+	if (ptr->o && !ptr->option)
+		ptr->option = ptr->o->e.name;
+
+	if (ptr->o)
+		return &ptr->o->e;
+	if (ptr->s)
+		return &ptr->s->e;
+	if (ptr->p)
+		return &ptr->p->e;
+	else
+		return NULL;
+}
+
+static void uci_add_element_list(struct uci_context *ctx, struct uci_ptr *ptr, bool internal)
+{
+	struct uci_element *e;
+	struct uci_package *p;
+
+	p = ptr->p;
+	if (!internal && p->has_delta)
+		uci_add_delta(ctx, &p->delta, UCI_CMD_LIST_ADD, ptr->section, ptr->option, ptr->value);
+
+	e = uci_alloc_generic(ctx, UCI_TYPE_ITEM, ptr->value, sizeof(struct uci_option));
+	uci_list_add(&ptr->o->v.list, &e->list);
+}
+
+int uci_rename(struct uci_context *ctx, struct uci_ptr *ptr)
+{
+	/* NB: UCI_INTERNAL use means without delta tracking */
+	bool internal = ctx && ctx->internal;
+	struct uci_element *e;
+	struct uci_package *p;
+	char *n;
+
+	UCI_HANDLE_ERR(ctx);
+
+	e = uci_expand_ptr(ctx, ptr, true);
+	p = ptr->p;
+
+	UCI_ASSERT(ctx, ptr->s);
+	UCI_ASSERT(ctx, ptr->value);
+
+	if (!internal && p->has_delta)
+		uci_add_delta(ctx, &p->delta, UCI_CMD_RENAME, ptr->section, ptr->option, ptr->value);
+
+	n = uci_strdup(ctx, ptr->value);
+	free(e->name);
+	e->name = n;
+
+	if (e->type == UCI_TYPE_SECTION)
+		uci_to_section(e)->anonymous = false;
+
+	return 0;
+}
+
+int uci_reorder_section(struct uci_context *ctx, struct uci_section *s, int pos)
+{
+	struct uci_package *p = s->package;
+	bool internal = ctx && ctx->internal;
+	char order[32];
+
+	UCI_HANDLE_ERR(ctx);
+
+	uci_list_set_pos(&s->package->sections, &s->e.list, pos);
+	if (!internal && p->has_delta) {
+		sprintf(order, "%d", pos);
+		uci_add_delta(ctx, &p->delta, UCI_CMD_REORDER, s->e.name, NULL, order);
+	}
+
+	return 0;
+}
+
+int uci_add_section(struct uci_context *ctx, struct uci_package *p, const char *type, struct uci_section **res)
+{
+	bool internal = ctx && ctx->internal;
+	struct uci_section *s;
+
+	UCI_HANDLE_ERR(ctx);
+	UCI_ASSERT(ctx, p != NULL);
+	s = uci_alloc_section(p, type, NULL);
+	uci_fixup_section(ctx, s);
+	*res = s;
+	if (!internal && p->has_delta)
+		uci_add_delta(ctx, &p->delta, UCI_CMD_ADD, s->e.name, NULL, type);
+
+	return 0;
+}
+
+int uci_delete(struct uci_context *ctx, struct uci_ptr *ptr)
+{
+	/* NB: pass on internal flag to uci_del_element */
+	bool internal = ctx && ctx->internal;
+	struct uci_package *p;
+	struct uci_element *e1, *e2, *tmp;
+	int index;
+
+	UCI_HANDLE_ERR(ctx);
+
+	e1 = uci_expand_ptr(ctx, ptr, true);
+	p = ptr->p;
+
+	UCI_ASSERT(ctx, ptr->s);
+
+	if (ptr->o && ptr->o->type == UCI_TYPE_LIST && ptr->value && *ptr->value) {
+		if (!sscanf(ptr->value, "%d", &index))
+			return 1;
+
+		uci_foreach_element_safe(&ptr->o->v.list, tmp, e2) {
+			if (index == 0) {
+				if (!internal && p->has_delta)
+					uci_add_delta(ctx, &p->delta, UCI_CMD_REMOVE, ptr->section, ptr->option, ptr->value);
+				uci_free_option(uci_to_option(e2));
+				return 0;
+			}
+			index--;
+		}
+
+		return 0;
+	}
+
+	if (!internal && p->has_delta)
+		uci_add_delta(ctx, &p->delta, UCI_CMD_REMOVE, ptr->section, ptr->option, NULL);
+
+	uci_free_any(&e1);
+
+	if (ptr->option)
+		ptr->o = NULL;
+	else if (ptr->section)
+		ptr->s = NULL;
+
+	return 0;
+}
+
+int uci_add_list(struct uci_context *ctx, struct uci_ptr *ptr)
+{
+	/* NB: UCI_INTERNAL use means without delta tracking */
+	bool internal = ctx && ctx->internal;
+	struct uci_option *prev = NULL;
+	const char *value2 = NULL;
+
+	UCI_HANDLE_ERR(ctx);
+
+	uci_expand_ptr(ctx, ptr, false);
+	UCI_ASSERT(ctx, ptr->s);
+	UCI_ASSERT(ctx, ptr->value);
+
+	if (ptr->o) {
+		switch (ptr->o->type) {
+		case UCI_TYPE_STRING:
+			/* we already have a string value, convert that to a list */
+			prev = ptr->o;
+			value2 = ptr->value;
+			ptr->value = ptr->o->v.string;
+			break;
+		case UCI_TYPE_LIST:
+			uci_add_element_list(ctx, ptr, internal);
+			return 0;
+		default:
+			UCI_THROW(ctx, UCI_ERR_INVAL);
+			break;
+		}
+	}
+
+	ptr->o = uci_alloc_list(ptr->s, ptr->option);
+	if (prev) {
+		uci_add_element_list(ctx, ptr, true);
+		uci_free_option(prev);
+		ptr->value = value2;
+	}
+	uci_add_element_list(ctx, ptr, internal);
+
+	return 0;
+}
+
+int uci_del_list(struct uci_context *ctx, struct uci_ptr *ptr)
+{
+	/* NB: pass on internal flag to uci_del_element */
+	bool internal = ctx && ctx->internal;
+	struct uci_element *e, *tmp;
+	struct uci_package *p;
+
+	UCI_HANDLE_ERR(ctx);
+
+	uci_expand_ptr(ctx, ptr, false);
+	UCI_ASSERT(ctx, ptr->s);
+	UCI_ASSERT(ctx, ptr->value);
+
+	if (!(ptr->o && ptr->option))
+		return 0;
+
+	if ((ptr->o->type != UCI_TYPE_LIST))
+		return 0;
+
+	p = ptr->p;
+	if (!internal && p->has_delta)
+		uci_add_delta(ctx, &p->delta, UCI_CMD_LIST_DEL, ptr->section, ptr->option, ptr->value);
+
+	uci_foreach_element_safe(&ptr->o->v.list, tmp, e) {
+		if (!strcmp(ptr->value, uci_to_option(e)->e.name)) {
+			uci_free_option(uci_to_option(e));
+		}
+	}
+
+	return 0;
+}
+
+int uci_set(struct uci_context *ctx, struct uci_ptr *ptr)
+{
+	/* NB: UCI_INTERNAL use means without delta tracking */
+	bool internal = ctx && ctx->internal;
+
+	UCI_HANDLE_ERR(ctx);
+	uci_expand_ptr(ctx, ptr, false);
+	UCI_ASSERT(ctx, ptr->value);
+	UCI_ASSERT(ctx, ptr->s || (!ptr->option && ptr->section));
+	if (!ptr->option && ptr->value[0]) {
+		UCI_ASSERT(ctx, uci_validate_type(ptr->value));
+	}
+
+	if (!ptr->o && ptr->s && ptr->option) {
+		struct uci_element *e;
+		e = uci_lookup_list(&ptr->s->options, ptr->option);
+		if (e)
+			ptr->o = uci_to_option(e);
+	}
+	if (!ptr->value[0]) {
+		/* if setting a nonexistant option/section to a nonexistant value,
+		 * exit without errors */
+		if (!(ptr->flags & UCI_LOOKUP_COMPLETE))
+			return 0;
+
+		return uci_delete(ctx, ptr);
+	} else if (!ptr->o && ptr->option) { /* new option */
+		ptr->o = uci_alloc_option(ptr->s, ptr->option, ptr->value);
+		ptr->last = &ptr->o->e;
+	} else if (!ptr->s && ptr->section) { /* new section */
+		ptr->s = uci_alloc_section(ptr->p, ptr->value, ptr->section);
+		ptr->last = &ptr->s->e;
+	} else if (ptr->o && ptr->option) { /* update option */
+		if ((ptr->o->type == UCI_TYPE_STRING) &&
+			!strcmp(ptr->o->v.string, ptr->value))
+			return 0;
+		uci_free_option(ptr->o);
+		ptr->o = uci_alloc_option(ptr->s, ptr->option, ptr->value);
+		ptr->last = &ptr->o->e;
+	} else if (ptr->s && ptr->section) { /* update section */
+		char *s = uci_strdup(ctx, ptr->value);
+
+		if (ptr->s->type == uci_dataptr(ptr->s)) {
+			ptr->last = NULL;
+			ptr->last = uci_realloc(ctx, ptr->s, sizeof(struct uci_section));
+			ptr->s = uci_to_section(ptr->last);
+			uci_list_fixup(&ptr->s->e.list);
+		} else {
+			free(ptr->s->type);
+		}
+		ptr->s->type = s;
+	} else {
+		UCI_THROW(ctx, UCI_ERR_INVAL);
+	}
+
+	if (!internal && ptr->p->has_delta)
+		uci_add_delta(ctx, &ptr->p->delta, UCI_CMD_CHANGE, ptr->section, ptr->option, ptr->value);
+
+	return 0;
+}
+
+int uci_unload(struct uci_context *ctx, struct uci_package *p)
+{
+	UCI_HANDLE_ERR(ctx);
+	UCI_ASSERT(ctx, p != NULL);
+
+	uci_free_package(&p);
+	return 0;
+}
+

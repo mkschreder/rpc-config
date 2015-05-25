@@ -114,7 +114,7 @@ int main(int argc, char **argv)
 	uloop_done();
 	
 	if (respawn)
-		exec_self(argc, argv);
+		fork(); //(argc, argv);
 
 	return 0;
 }

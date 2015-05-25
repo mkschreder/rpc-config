@@ -38,7 +38,7 @@ static const char *uci_errstr[] = {
 };
 
 #include "uci_internal.h"
-#include "list.c"
+#include "list.h"
 
 __private const char *uci_confdir = UCI_CONFDIR;
 __private const char *uci_savedir = UCI_SAVEDIR;
